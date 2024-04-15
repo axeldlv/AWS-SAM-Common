@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Runtime: java11
+    Timeout: 20
+    MemorySize: 512
+    Layers:
+      - arn:aws:123456:layer:aws-sdk:6
+
+Resources:
+# Function - API Gateway and DynamoDB
+  GetProductionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ProductFunction/target/ProductFunction-1.0.jar
+      Handler: index.getProducts
+      Runtime: java11
+      Description: Create a ProductFunction
+      Tracing: 
+        Mode: Active
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: {{resolve:secretmanager:/myfunction/TableName}} # for instance
+      Events:
+        GetProducts:
+          Type: Api
+          Properties:
+            Path: /products
+            Method: get
+            # ApiKeyRequired: true
+
+# Function - S3
+  MyS3Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: MyS3Function
+      Handler: index.handler
+      Runtime: java11
+      Description: Create a MyS3Function
+      MemorySize: 1024
+      Timeout: 15
+      Policies: 
+        - S3CrudPolicy:
+            BucketName: {{resolve:ssm:/myfunction/BucketName:1}} # for instance
+      Layers:
+        - arn:aws:123456:layer:aws-sdk:6
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MyTable # Need to add a reference to the database
+      Events:
+        MyS3Event:
+          Type: S3
+          Properties: 
+            Bucket: !Ref MyBucket # Need to add a reference to the bucket
+            Events:
+              - s3:ObjectCreated:*

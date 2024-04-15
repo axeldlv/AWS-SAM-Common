@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Resources:
+
+# Application
+  MyApplication:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: 
+        ApplicationId: 'arn:aws:serverlessrepo:us-west-2:123456789012:applications/MyApplication'
+        SemanticVersion: 1.0.0
+      Parameters:
+        StringParameter: param-value
+        IntegerParameter: "2"
+  MyApplication2:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: AWSBucket/template.yaml        
+
+# StateMachine - AWS Step Functions
+  MyStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: sfn/MyStateMachine.asl.json
+      Role: 'arn:aws:iam:::role/service/MyRole'
+      DefinitionSubstitutions:
+        MyFunctionArn: !GetAtt MyFunction.Arn
+        MyDDBTable: !Ref ProductTable
+
+# Function - API Gateway and DynamoDB
+  GetProductionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ProductFunction/target/ProductFunction-1.0.jar
+      Handler: index.getProducts
+      Runtime: java11
+      Description: Create a ProductFunction
+      MemorySize: 1024
+      Timeout: 15
+      Tracing: 
+        Mode: Active
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductTable
+      Events:
+        GetProducts:
+          Type: Api
+          Properties:
+            Path: /products
+            Method: get
+            # ApiKeyRequired: true
+
+# Function - S3
+  MyS3Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: MyS3Function
+      Handler: index.handler
+      Runtime: java11
+      Description: Create a MyS3Function
+      MemorySize: 1024
+      Timeout: 15
+      Policies: 
+        - S3CrudPolicy:
+            BucketName: !Ref S3Bucket
+      Layers:
+        - arn:aws:123456:layer:aws-sdk:6
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ProductTable
+      Events:
+        MyS3Event:
+          Type: S3
+          Properties: 
+            Bucket: !Ref S3Bucket
+            Events:
+              - s3:ObjectCreated:*
+
+# SimpleTable
+  ProductTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: myTable
+      PrimaryKey:
+        Name: id
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      Tags:
+        Department: Engineering
+        AppType: Serverless
+
+# API
+  MyAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      DefinitionUri: swagger.yaml
+
+# HTTP
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+        AllowOrigins:
+          - '*'
+        AllowCredentials: true
+
+# (Lambda) Layer version - A Lambda layer is a .zip file archive that contains supplementary code or data
+  MyLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: MyLayer
+      Description: static data layer for app
+      ContentUri: mylayer.zip
+      CompatibleRuntimes:
+        - java11
+      LicenseInfo: Apache 2.0
+      RetentionPolicy: Retain
+
+# S3
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: DOC-EXAMPLE-BUCKET      
