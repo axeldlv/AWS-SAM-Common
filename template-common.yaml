@@ -11,11 +11,25 @@ Resources:
         SemanticVersion: 1.0.0
       Parameters:
         StringParameter: param-value
-        IntegerParameter: "2"
+        IntegerParameter: 2
   MyApplication2:
     Type: AWS::Serverless::Application
     Properties:
-      Location: AWSBucket/template.yaml        
+      Location: https://s3.amazonaws.com/bucketName/template.yaml   
+
+# Connector
+  Transform: AWS::Serverless-2016-10-31
+    MyTable:
+      Type: AWS::Serverless::SimpleTable
+    MyFunction:
+      Type: AWS::Serverless::Function
+      Connectors:
+        MyConn:
+          Properties:
+            Destination:
+              Id: MyTable
+            Permissions:
+              - Write 
 
 # StateMachine - AWS Step Functions
   MyStateMachine:
@@ -32,8 +46,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ProductFunction/target/ProductFunction-1.0.jar
-      Handler: index.getProducts
-      Runtime: java11
+      Handler: ProductFunction.App::handleRequest
+      Runtime: java21
       Description: Create a ProductFunction
       MemorySize: 1024
       Timeout: 15
@@ -56,7 +70,7 @@ Resources:
     Properties:
       CodeUri: MyS3Function
       Handler: index.handler
-      Runtime: java11
+      Runtime: java21
       Description: Create a MyS3Function
       MemorySize: 1024
       Timeout: 15
@@ -102,6 +116,20 @@ Resources:
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
+      DefinitionBody:
+        info:
+          version: '1.0'
+          title:
+            Ref: AWS::StackName
+        paths:
+          "/":
+            get:
+              security:
+              - OpenIdAuth:
+                - scope1
+                - scope2
+              responses: {}
+      openapi: 3.0.1
       CorsConfiguration:
         AllowMethods:
           - GET
@@ -117,7 +145,7 @@ Resources:
       Description: static data layer for app
       ContentUri: mylayer.zip
       CompatibleRuntimes:
-        - java11
+        - java21
       LicenseInfo: Apache 2.0
       RetentionPolicy: Retain
 
@@ -126,4 +154,57 @@ Resources:
     Type: 'AWS::S3::Bucket'
     DeletionPolicy: Retain
     Properties:
-      BucketName: DOC-EXAMPLE-BUCKET      
+      BucketName: DOC-EXAMPLE-BUCKET
+
+# GraphQL
+  MyLambdaFunction:
+    Type: AWS::Serverless::Function
+  Properties:
+    CodeUri: HelloWorldFunction/target/HelloWorld-1.0.jar
+    Handler: helloworld.App::handleRequest    
+    Runtime: java21
+
+  MyGraphQLAPI:
+    Type: AWS::Serverless::GraphQLApi
+    Properties:
+      Name: MyApi
+      SchemaUri: ./gql/schema.gql
+      Auth:
+        Type: API_KEY
+      ApiKeys:
+        MyApiKey:
+          Description: my api key
+      DataSources:
+        Lambda:
+          MyLambdaDataSource:
+            FunctionArn: !GetAtt MyLambdaFunction.Arn
+      Functions:
+        lambdaInvoker:
+          Runtime:
+            Name: APPSYNC_JS
+            Version: 1.0.0
+          DataSource: MyLambdaDataSource
+          CodeUri: ./gql/invoker.js
+      Resolvers:
+        Mutation:
+          addPost:
+            Runtime:
+              Name: APPSYNC_JS
+              Version: 1.0.0
+            Pipeline:
+            - lambdaInvoker
+        Query:
+          getPost:
+            Runtime:
+              Name: APPSYNC_JS
+              Version: 1.0.0
+            Pipeline:
+            - lambdaInvoker
+
+Outputs:
+  MyGraphQLAPI:
+    Description: AppSync API
+    Value: !GetAtt MyGraphQLAPI.GraphQLUrl
+  MyGraphQLAPIMyApiKey:
+    Description: API Key for authentication
+    Value: !GetAtt MyGraphQLAPIMyApiKey.ApiKey
